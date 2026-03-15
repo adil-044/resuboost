@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+python-multipart
+spacy
+pymupdf
+python-docx
+sentence-transformers
+scikit-learn
+pydantic
+python-jose
+passlib
+reportlab
+markdown
