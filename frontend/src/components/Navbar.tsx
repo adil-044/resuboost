@@ -51,10 +51,10 @@ export default function Navbar() {
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-100">
                     <div className="h-6 w-6 rounded-full bg-indigo-600 flex items-center justify-center text-[10px] font-black text-white">
-                      {user.email?.[0].toUpperCase()}
+                      {(user.user_metadata?.full_name?.[0] || user.email?.[0]).toUpperCase()}
                     </div>
                     <span className="text-xs font-bold text-slate-700 hidden sm:block">
-                      {user.email?.split('@')[0]}
+                      {user.user_metadata?.full_name || user.email?.split('@')[0]}
                     </span>
                   </div>
                 </div>

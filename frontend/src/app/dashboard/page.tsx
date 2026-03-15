@@ -23,12 +23,14 @@ export default function Dashboard() {
     isAnalyzing,
     resumeFile,
     jobDescription,
-    history
+    history,
+    setHistory
   } = useResumeStore();
 
   const [dragActive, setDragActive] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'scan' | 'history'>('scan');
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   useEffect(() => {
     const getUser = async () => {
@@ -37,10 +39,60 @@ export default function Dashboard() {
         router.push('/auth/login');
       } else {
         setUser(user);
+        
+        // Sync profile data if it doesn't exist
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+          
+        if (!profile) {
+          await supabase.from('profiles').insert({
+            id: user.id,
+            full_name: user.user_metadata.full_name || user.email?.split('@')[0],
+            location: user.user_metadata.location || 'Unknown'
+          });
+        }
+        
+        fetchHistory(user.id);
       }
     };
     getUser();
   }, [router]);
+
+  const fetchHistory = async (userId: string) => {
+    setIsLoadingHistory(true);
+    const { data, error } = await supabase
+      .from('resumes')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('History fetch error:', error);
+    } else {
+      setHistory(data.map((item: any) => ({
+        id: item.id,
+        overall_score: item.after_score || item.before_score,
+        initial_score: item.before_score,
+        breakdown: {
+          keyword_match: 0,
+          semantic_alignment: 0,
+          section_integrity: 0
+        },
+        missing_keywords: [],
+        matched_keywords: [],
+        formatting_issues: [],
+        optimized_content: {
+          format: 'markdown',
+          raw_text: item.optimized_text || item.original_text
+        },
+        job_title: item.job_title
+      })));
+    }
+    setIsLoadingHistory(false);
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -73,11 +125,30 @@ export default function Dashboard() {
     setIsAnalyzing(true);
     try {
       const result = await analyzeResume(resumeFile, jobDescription);
+      
+      // Save to Supabase History
+      const { data, error } = await supabase
+        .from('resumes')
+        .insert({
+          user_id: user.id,
+          job_title: result.optimized_content.raw_text.split('\n')[0].replace('# ', '') || 'New Optimization',
+          original_text: result.original_text || '',
+          optimized_text: result.optimized_content.raw_text,
+          before_score: result.initial_score,
+          after_score: result.overall_score
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Update result ID to database ID
+      result.id = data.id;
       setAnalysisResult(result);
-      router.push(`/workspace/${result.id}`);
+      router.push(`/workspace/${data.id}`);
     } catch (error) {
       console.error(error);
-      alert('Analysis failed. Ensure your Gemini API Key is set in the backend.');
+      alert('Analysis failed. Check your API key and connection.');
     } finally {
       setIsAnalyzing(false);
     }
@@ -94,14 +165,14 @@ export default function Dashboard() {
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 px-4">Management</p>
             <button 
               onClick={() => setActiveTab('scan')}
-              className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl font-bold text-sm transition-all ${activeTab === 'scan' ? 'bg-white text-indigo-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:bg-slate-100'}`}
+              className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl font-bold text-sm transition-all ${activeTab === 'scan' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-500 hover:bg-slate-100'}`}
             >
               <Plus className="h-4 w-4" />
               New Executive Scan
             </button>
             <button 
               onClick={() => setActiveTab('history')}
-              className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl font-bold text-sm transition-all ${activeTab === 'history' ? 'bg-white text-indigo-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:bg-slate-100'}`}
+              className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl font-bold text-sm transition-all ${activeTab === 'history' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-500 hover:bg-slate-100'}`}
             >
               <History className="h-4 w-4" />
               Scan History
@@ -160,7 +231,6 @@ export default function Dashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  {/* Step 1: Document */}
                   <div className="lg:col-span-2 space-y-8">
                     <div className="bg-slate-50 p-10 rounded-[2.5rem] border border-slate-200/60 shadow-sm relative overflow-hidden group">
                       <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform duration-500">
@@ -212,7 +282,6 @@ export default function Dashboard() {
                     </button>
                   </div>
 
-                  {/* Step 2: JD */}
                   <div className="lg:col-span-1">
                     <div className="bg-slate-900 p-8 rounded-[2.5rem] shadow-2xl h-full flex flex-col">
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-6">
@@ -247,7 +316,13 @@ export default function Dashboard() {
                   </button>
                 </div>
 
-                {history.length === 0 ? (
+                {isLoadingHistory ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {[1,2,3].map(i => (
+                      <div key={i} className="h-64 bg-slate-50 rounded-[2rem] animate-pulse border border-slate-100" />
+                    ))}
+                  </div>
+                ) : history.length === 0 ? (
                   <div className="bg-slate-50 rounded-[3rem] p-32 border border-dashed border-slate-200 text-center space-y-6">
                     <div className="h-20 w-20 bg-white rounded-3xl mx-auto flex items-center justify-center shadow-sm">
                       <Search className="h-8 w-8 text-slate-300" />
@@ -259,7 +334,36 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    {/* Vault items would go here with Before/After score badges */}
+                    {history.map((item) => (
+                      <motion.div 
+                        key={item.id}
+                        whileHover={{ y: -5 }}
+                        className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/50 group cursor-pointer"
+                        onClick={() => {
+                          setAnalysisResult(item);
+                          router.push(`/workspace/${item.id}`);
+                        }}
+                      >
+                        <div className="flex justify-between items-start mb-6">
+                          <div className="bg-indigo-50 p-3 rounded-2xl text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                            <Briefcase className="h-6 w-6" />
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Match Score</p>
+                            <p className="text-2xl font-black text-indigo-600">{item.overall_score}%</p>
+                          </div>
+                        </div>
+                        <h3 className="text-lg font-black text-slate-900 mb-2 truncate uppercase tracking-tight">
+                          {item.job_title || 'Untitled Optimization'}
+                        </h3>
+                        <div className="flex items-center justify-between pt-6 border-t border-slate-50">
+                          <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest group-hover:translate-x-1 transition-transform inline-flex items-center gap-2">
+                            View Stream <ArrowRight className="h-3.5 w-3.5" />
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-300">Initial: {item.initial_score}%</span>
+                        </div>
+                      </motion.div>
+                    ))}
                   </div>
                 )}
               </motion.div>

@@ -54,6 +54,13 @@ export default function Workspace({ params }: { params: Promise<{ id: string }> 
     try {
       const result = await optimizeResume(markdown, jobDescription);
       setMarkdown(result.optimized_text);
+      
+      // Persist to Supabase
+      await supabase
+        .from('resumes')
+        .update({ optimized_text: result.optimized_text, after_score: analysisResult.overall_score })
+        .eq('id', id);
+        
     } catch (error) {
       console.error(error);
       alert('Optimization failed.');
@@ -61,6 +68,20 @@ export default function Workspace({ params }: { params: Promise<{ id: string }> 
       setIsOptimizing(false);
     }
   };
+
+  // Add auto-save for manual edits
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (markdown && analysisResult && markdown !== analysisResult.optimized_content.raw_text) {
+        await supabase
+          .from('resumes')
+          .update({ optimized_text: markdown })
+          .eq('id', id);
+      }
+    }, 2000); // Auto-save after 2s of inactivity
+    
+    return () => clearTimeout(timer);
+  }, [markdown, id, analysisResult]);
 
   if (!analysisResult) {
     return (
