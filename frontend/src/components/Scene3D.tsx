@@ -31,6 +31,7 @@ function BackgroundElements() {
             count={points.length / 3}
             array={points}
             itemSize={3}
+            args={[points, 3]}
           />
         </bufferGeometry>
         <pointsMaterial size={0.02} color="#4f46e5" transparent opacity={0.4} sizeAttenuation />
