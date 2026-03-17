@@ -56,10 +56,12 @@ export default function Workspace({ params }: { params: Promise<{ id: string }> 
       setMarkdown(result.optimized_text);
       
       // Persist to Supabase
-      await supabase
-        .from('resumes')
-        .update({ optimized_text: result.optimized_text, after_score: analysisResult.overall_score })
-        .eq('id', id);
+      if (analysisResult) {
+        await supabase
+          .from('resumes')
+          .update({ optimized_text: result.optimized_text, after_score: analysisResult.overall_score })
+          .eq('id', id);
+      }
         
     } catch (error) {
       console.error(error);
